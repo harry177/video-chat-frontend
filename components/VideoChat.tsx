@@ -403,7 +403,7 @@ export function VideoChat() {
           <button
             className="rounded border px-4 py-2 disabled:opacity-50"
             onClick={leaveRoom}
-            disabled={isBusy || !isConnected}
+            disabled={isBusy || !currentRoom}
           >
             Leave
           </button>
