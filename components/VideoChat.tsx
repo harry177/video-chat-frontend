@@ -72,36 +72,66 @@ export function VideoChat() {
   }
 
   useEffect(() => {
-  let isCancelled = false;
+    let isCancelled = false;
 
-  async function loadActiveRooms() {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/rooms/active`);
-      const data = await response.json();
+    async function loadActiveRooms() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/rooms/active`);
+        const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data?.error || "Failed to fetch rooms");
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to fetch rooms");
+        }
+
+        if (!isCancelled) {
+          setRooms(data.rooms);
+        }
+      } catch {
+        // ignore polling errors for MVP
       }
-
-      if (!isCancelled) {
-        setRooms(data.rooms);
-      }
-    } catch {
-      // ignore polling errors for MVP
     }
-  }
 
-  void loadActiveRooms();
-
-  const intervalId = window.setInterval(() => {
     void loadActiveRooms();
-  }, 3000);
 
-  return () => {
-    isCancelled = true;
-    window.clearInterval(intervalId);
-  };
-}, []);
+    const intervalId = window.setInterval(() => {
+      void loadActiveRooms();
+    }, 3000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (!currentRoom) return;
+
+      const url = isHost
+        ? `${API_BASE_URL}/api/v1/rooms/${currentRoom.id}/end`
+        : `${API_BASE_URL}/api/v1/rooms/${currentRoom.id}/leave`;
+
+      void fetch(url, {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({
+          participantIdentity,
+        }),
+      });
+
+      livekitRoomRef.current?.disconnect();
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [currentRoom, isHost, accessToken, participantIdentity]);
 
   async function login() {
     try {
@@ -395,26 +425,28 @@ export function VideoChat() {
           <button
             className="rounded border px-4 py-2 disabled:opacity-50"
             onClick={createRoom}
-            disabled={isBusy || !accessToken || isConnected}
+            disabled={isBusy || !accessToken || !!currentRoom}
           >
             Start video chat
           </button>
 
-          <button
-            className="rounded border px-4 py-2 disabled:opacity-50"
-            onClick={leaveRoom}
-            disabled={isBusy || !currentRoom}
-          >
-            Leave
-          </button>
+          {currentRoom && !isHost && (
+            <button
+              className="rounded border px-4 py-2 disabled:opacity-50"
+              onClick={leaveRoom}
+              disabled={isBusy}
+            >
+              Leave
+            </button>
+          )}
 
-          {isHost && (
+          {currentRoom && isHost && (
             <button
               className="rounded border px-4 py-2 disabled:opacity-50"
               onClick={endRoom}
               disabled={isBusy}
             >
-              End my video chat
+              Leave and end chat
             </button>
           )}
         </div>
@@ -448,7 +480,7 @@ export function VideoChat() {
                 <button
                   className="rounded border px-4 py-2 disabled:opacity-50"
                   onClick={() => joinRoom(room.id)}
-                  disabled={isBusy || isConnected}
+                  disabled={isBusy || !!currentRoom}
                 >
                   Join
                 </button>
